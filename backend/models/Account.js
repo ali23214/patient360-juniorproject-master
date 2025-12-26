@@ -44,44 +44,35 @@ const accountSchema = new mongoose.Schema({
     default: null
   },
   
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // ADMIN FEATURES: Deactivation Tracking
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // NEW: Deactivation tracking fields
   deactivationReason: {
     type: String,
-    enum: ['death', 'license_revoked', 'user_request', 'fraud', 'retirement', 'transfer', 'other'],
+    enum: ['death', 'license_revoked', 'user_request', 'fraud', 'retirement', 'transfer', 'other', null],
     default: null
   },
-  
   deactivationNotes: {
     type: String,
-    trim: true,
-    maxlength: [1000, 'ملاحظات إلغاء التفعيل لا يمكن أن تتجاوز 1000 حرف'],
+    maxlength: [1000, 'ملاحظات إلغاء التفعيل يجب ألا تتجاوز 1000 حرف'],
     default: null
   },
-  
   deactivatedAt: {
     type: Date,
     default: null
   },
-  
   deactivatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Account',
     default: null
   },
-  
   reactivatedAt: {
     type: Date,
     default: null
   },
-  
   reactivatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Account',
     default: null
   }
-  
 }, {
   timestamps: true,
   collection: 'accounts'
@@ -116,7 +107,7 @@ accountSchema.methods.comparePassword = async function(candidatePassword) {
 
 // Indexes
 accountSchema.index({ email: 1 }, { unique: true });
-accountSchema.index({ personId: 1 }, { unique: true });
+accountSchema.index({ personId: 1 });
 accountSchema.index({ isActive: 1 });
 
 module.exports = mongoose.model('Account', accountSchema, 'accounts');

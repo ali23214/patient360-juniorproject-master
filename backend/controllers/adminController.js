@@ -1,5 +1,6 @@
 // backend/controllers/adminController.js
 // Admin Controller for Patient360 System
+// COMPLETE VERSION - Optimized for AdminDashboard Frontend
 
 const Account = require('../models/Account');
 const Doctor = require('../models/Doctor');
@@ -13,175 +14,132 @@ const bcrypt = require('bcryptjs');
 
 exports.getStatistics = async (req, res) => {
   try {
-    // Get total doctors count
-    const totalDoctors = await Doctor.countDocuments();
-    const doctors = await Doctor.find().populate('personId');
-    const activeDoctorsCount = doctors.filter(d => {
-      const account = d.personId?.account;
-      return account?.isActive !== false;
-    }).length;
-
-    // Get total patients count
-    const totalPatients = await Patient.countDocuments();
-    const patients = await Patient.find().populate('personId');
-    const activePatientsCount = patients.filter(p => {
-      const account = p.personId?.account;
-      return account?.isActive !== false;
-    }).length;
-
-    // Get visits statistics
-    const totalVisits = await Visit.countDocuments();
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const todayVisits = await Visit.countDocuments({
-      visitDate: {
-        $gte: today,
-        $lt: tomorrow
-      }
-    });
-
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const firstDayOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    
-    const monthlyVisits = await Visit.countDocuments({
-      visitDate: {
-        $gte: firstDayOfMonth,
-        $lt: firstDayOfNextMonth
-      }
-    });
-
-    // Get specialization statistics
-    const specializationStats = await Doctor.aggregate([
-      {
-        $group: {
-          _id: '$specialization',
-          count: { $sum: 1 }
+    const [
+      totalDoctors,
+      totalPatients,
+      totalVisits,
+      todayVisits
+    ] = await Promise.all([
+      Doctor.countDocuments(),
+      Patient.countDocuments(),
+      Visit.countDocuments(),
+      Visit.countDocuments({
+        visitDate: {
+          $gte: new Date(new Date().setHours(0, 0, 0, 0))
         }
-      },
-      {
-        $sort: { count: -1 }
-      },
-      {
-        $limit: 10
-      }
+      })
     ]);
 
-    // Get recent activity (last 20 audit logs)
-    const recentActivity = await AuditLog.find()
-      .sort({ timestamp: -1 })
-      .limit(20)
-      .populate('userId', 'email roles');
-
-    res.status(200).json({
+    res.json({
       success: true,
       statistics: {
         totalDoctors,
-        activeDoctors: activeDoctorsCount,
-        inactiveDoctors: totalDoctors - activeDoctorsCount,
         totalPatients,
-        activePatients: activePatientsCount,
-        inactivePatients: totalPatients - activePatientsCount,
         totalVisits,
-        todayVisits,
-        monthlyVisits,
-        specializationStats: specializationStats.map(s => ({
-          specialization: s._id,
-          count: s.count
-        })),
-        recentActivity: recentActivity.map(log => ({
-          id: log._id,
-          action: log.action,
-          description: log.description,
-          userEmail: log.userId?.email,
-          timestamp: log.timestamp,
-          ipAddress: log.ipAddress
-        }))
+        todayVisits
       }
     });
   } catch (error) {
     console.error('Get statistics error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في جلب الإحصائيات'
+      message: 'حدث خطأ في جلب الإحصائيات'
     });
   }
 };
 
-// ==================== DOCTORS MANAGEMENT ====================
+// ==================== GET ALL DOCTORS ====================
 
 exports.getAllDoctors = async (req, res) => {
   try {
-    // Get all doctors with populated person and account data
-    const doctors = await Doctor.find()
-      .populate({
-        path: 'personId',
-        select: 'firstName lastName nationalId gender phoneNumber address dateOfBirth'
+    console.log('📥 getAllDoctors called');
+    
+    // Get all doctors
+    const doctors = await Doctor.find().lean();
+    console.log(`✅ Found ${doctors.length} doctors in database`);
+    
+    if (doctors.length === 0) {
+      return res.json({
+        success: true,
+        count: 0,
+        doctors: []
+      });
+    }
+
+    // Process each doctor
+    const doctorsWithDetails = await Promise.all(
+      doctors.map(async (doctor) => {
+        try {
+          // Get person data
+          const person = await Person.findById(doctor.personId).lean();
+          
+          if (!person) {
+            console.warn(`⚠️ Person not found for doctor ${doctor._id}`);
+            return null;
+          }
+
+          // Get account data
+          const account = await Account.findOne({ personId: doctor.personId }).lean();
+          
+          if (!account) {
+            console.warn(`⚠️ Account not found for doctor ${doctor._id}`);
+          }
+
+          return {
+            id: doctor._id,
+            firstName: person.firstName || '',
+            lastName: person.lastName || '',
+            nationalId: person.nationalId || '',
+            phoneNumber: person.phoneNumber || '',
+            email: account?.email || '',
+            isActive: account?.isActive ?? true,
+            specialization: doctor.specialization || '',
+            subSpecialization: doctor.subSpecialization || null,
+            licenseNumber: doctor.medicalLicenseNumber || '',
+            hospitalAffiliation: doctor.hospitalAffiliation || '',
+            yearsOfExperience: doctor.yearsOfExperience || 0,
+            consultationFee: doctor.consultationFee || 0,
+            availableDays: doctor.availableDays || [],
+            governorate: person.governorate || '',
+            city: person.city || '',
+            lastLogin: account?.lastLogin || null,
+            createdAt: doctor.createdAt || new Date()
+          };
+        } catch (error) {
+          console.error(`❌ Error processing doctor ${doctor._id}:`, error);
+          return null;
+        }
       })
-      .sort({ createdAt: -1 });
+    );
 
-    // Get accounts for all persons
-    const personIds = doctors.map(d => d.personId._id);
-    const accounts = await Account.find({ personId: { $in: personIds } })
-      .select('personId email isActive lastLogin');
+    // Filter out null values (doctors with missing data)
+    const validDoctors = doctorsWithDetails.filter(d => d !== null);
+    
+    console.log(`✅ Returning ${validDoctors.length} valid doctors`);
 
-    // Map accounts to persons
-    const accountMap = {};
-    accounts.forEach(acc => {
-      accountMap[acc.personId.toString()] = acc;
-    });
-
-    // Format response
-    const formattedDoctors = doctors.map(doctor => {
-      const account = accountMap[doctor.personId._id.toString()];
-      
-      return {
-        id: doctor._id,
-        personId: doctor.personId._id,
-        firstName: doctor.personId.firstName,
-        lastName: doctor.personId.lastName,
-        nationalId: doctor.personId.nationalId,
-        gender: doctor.personId.gender,
-        phoneNumber: doctor.personId.phoneNumber,
-        address: doctor.personId.address,
-        dateOfBirth: doctor.personId.dateOfBirth,
-        email: account?.email || 'N/A',
-        isActive: account?.isActive !== false,
-        lastLogin: account?.lastLogin,
-        medicalLicenseNumber: doctor.medicalLicenseNumber,
-        specialization: doctor.specialization,
-        subSpecialization: doctor.subSpecialization,
-        yearsOfExperience: doctor.yearsOfExperience,
-        hospitalAffiliation: doctor.hospitalAffiliation,
-        consultationFee: doctor.consultationFee,
-        availableDays: doctor.availableDays,
-        createdAt: doctor.createdAt,
-        updatedAt: doctor.updatedAt
-      };
-    });
-
-    res.status(200).json({
+    res.json({
       success: true,
-      count: formattedDoctors.length,
-      doctors: formattedDoctors
+      count: validDoctors.length,
+      doctors: validDoctors
     });
+
   } catch (error) {
-    console.error('Get all doctors error:', error);
+    console.error('❌ Get doctors error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في جلب بيانات الأطباء'
+      message: 'حدث خطأ في جلب الأطباء',
+      error: error.message
     });
   }
 };
 
+// ==================== GET DOCTOR BY ID ====================
+
 exports.getDoctorById = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.id)
-      .populate('personId');
+    const { id } = req.params;
 
+    const doctor = await Doctor.findById(id).populate('personId');
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -190,141 +148,177 @@ exports.getDoctorById = async (req, res) => {
     }
 
     const account = await Account.findOne({ personId: doctor.personId._id });
+    const visitCount = await Visit.countDocuments({ doctorId: doctor._id });
 
-    // Get doctor's visits statistics
-    const totalVisits = await Visit.countDocuments({ doctorId: doctor._id });
-
-    res.status(200).json({
+    res.json({
       success: true,
       doctor: {
-        ...doctor.toObject(),
-        person: doctor.personId,
+        id: doctor._id,
+        firstName: doctor.personId.firstName,
+        lastName: doctor.personId.lastName,
+        nationalId: doctor.personId.nationalId,
+        phoneNumber: doctor.personId.phoneNumber,
+        gender: doctor.personId.gender,
+        dateOfBirth: doctor.personId.dateOfBirth,
+        address: doctor.personId.address,
+        governorate: doctor.personId.governorate,
+        city: doctor.personId.city,
         email: account?.email,
-        isActive: account?.isActive !== false,
-        lastLogin: account?.lastLogin,
-        totalVisits
+        isActive: account?.isActive,
+        specialization: doctor.specialization,
+        subSpecialization: doctor.subSpecialization,
+        licenseNumber: doctor.medicalLicenseNumber,
+        hospitalAffiliation: doctor.hospitalAffiliation,
+        yearsOfExperience: doctor.yearsOfExperience,
+        consultationFee: doctor.consultationFee,
+        availableDays: doctor.availableDays,
+        visitCount,
+        createdAt: doctor.createdAt
       }
     });
   } catch (error) {
-    console.error('Get doctor by ID error:', error);
+    console.error('Get doctor error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في جلب بيانات الطبيب'
+      message: 'حدث خطأ في جلب بيانات الطبيب'
     });
   }
 };
 
+// ==================== CREATE DOCTOR ====================
+
 exports.createDoctor = async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      nationalId,
-      licenseNumber,
-      specialization,
-      subSpecialization,
-      gender,
-      dateOfBirth,
-      phoneNumber,
-      email,
-      password,
-      education,
-      yearsOfExperience,
-      institution,
-      clinicAddress,
-      governorate,
-      city
-    } = req.body;
+    const { person, doctor, account } = req.body;
+
+    console.log('📥 Received create doctor request');
+    console.log('Person:', person);
+    console.log('Doctor:', doctor);
+    console.log('Account:', account);
+
+    // Validate required data
+    if (!person || !doctor || !account) {
+      return res.status(400).json({
+        success: false,
+        message: 'البيانات غير مكتملة'
+      });
+    }
 
     // Check if national ID already exists
-    const existingPerson = await Person.findOne({ nationalId });
+    const existingPerson = await Person.findOne({ nationalId: person.nationalId });
     if (existingPerson) {
       return res.status(400).json({
         success: false,
-        message: 'الرقم الوطني مسجل مسبقاً'
+        message: 'الرقم الوطني مستخدم بالفعل'
       });
     }
 
     // Check if email already exists
-    const existingAccount = await Account.findOne({ email });
+    const existingAccount = await Account.findOne({ email: account.email });
     if (existingAccount) {
       return res.status(400).json({
         success: false,
-        message: 'البريد الإلكتروني مسجل مسبقاً'
+        message: 'البريد الإلكتروني مستخدم بالفعل'
       });
     }
 
     // Check if license number already exists
-    const existingDoctor = await Doctor.findOne({ medicalLicenseNumber: licenseNumber });
+    const existingDoctor = await Doctor.findOne({ 
+      medicalLicenseNumber: doctor.medicalLicenseNumber.toUpperCase() 
+    });
     if (existingDoctor) {
       return res.status(400).json({
         success: false,
-        message: 'رقم الترخيص الطبي مسجل مسبقاً'
+        message: 'رقم الترخيص مستخدم بالفعل'
       });
     }
 
-    // Create Person
-    const person = await Person.create({
-      firstName,
-      lastName,
-      nationalId,
-      gender,
-      dateOfBirth,
-      phoneNumber,
-      address: `${clinicAddress}, ${city}, ${governorate}`,
+    // Step 1: Create Person
+    console.log('1️⃣ Creating Person...');
+    const newPerson = await Person.create({
+      firstName: person.firstName.trim(),
+      lastName: person.lastName.trim(),
+      nationalId: person.nationalId.trim(),
+      gender: person.gender || 'male',
+      dateOfBirth: person.dateOfBirth,
+      phoneNumber: person.phoneNumber.trim(),
+      address: person.address?.trim() || '',
+      governorate: person.governorate,
+      city: person.city?.trim() || '',
       isMinor: false
     });
+    console.log('✅ Person created:', newPerson._id);
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Step 2: Hash password
+    console.log('2️⃣ Hashing password...');
+    const hashedPassword = await bcrypt.hash(account.password, 10);
+    console.log('✅ Password hashed');
 
-    // Create Account
-    const account = await Account.create({
-      email,
+    // Step 3: Create Account
+    console.log('3️⃣ Creating Account...');
+    const newAccount = await Account.create({
+      email: account.email.toLowerCase().trim(),
       password: hashedPassword,
+      personId: newPerson._id,
       roles: ['doctor'],
-      personId: person._id,
       isActive: true
     });
+    console.log('✅ Account created:', newAccount._id);
 
-    // Create Doctor
-    const doctor = await Doctor.create({
-      personId: person._id,
-      medicalLicenseNumber: licenseNumber,
-      specialization,
-      subSpecialization: subSpecialization || null,
-      yearsOfExperience: parseInt(yearsOfExperience) || 0,
-      hospitalAffiliation: institution || 'N/A',
-      consultationFee: 0
+    // Step 4: Create Doctor
+    console.log('4️⃣ Creating Doctor...');
+    const newDoctor = await Doctor.create({
+      personId: newPerson._id,
+      medicalLicenseNumber: doctor.medicalLicenseNumber.toUpperCase().trim(),
+      specialization: doctor.specialization.trim(),
+      subSpecialization: doctor.subSpecialization?.trim() || null,
+      yearsOfExperience: parseInt(doctor.yearsOfExperience) || 0,
+      hospitalAffiliation: doctor.hospitalAffiliation.trim(),
+      availableDays: doctor.availableDays || [],
+      consultationFee: parseFloat(doctor.consultationFee) || 0,
+      availableTimes: doctor.availableTimes || { start: '09:00', end: '17:00' }
     });
+    console.log('✅ Doctor created:', newDoctor._id);
 
     res.status(201).json({
       success: true,
       message: 'تم إضافة الطبيب بنجاح',
       doctor: {
-        id: doctor._id,
-        personId: person._id,
-        accountId: account._id,
-        email,
-        firstName,
-        lastName,
-        specialization
+        id: newDoctor._id,
+        firstName: newPerson.firstName,
+        lastName: newPerson.lastName,
+        email: newAccount.email,
+        specialization: newDoctor.specialization,
+        licenseNumber: newDoctor.medicalLicenseNumber
       }
     });
+
   } catch (error) {
-    console.error('Create doctor error:', error);
+    console.error('❌ Create doctor error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'خطأ في إضافة الطبيب'
+      message: 'حدث خطأ أثناء إضافة الطبيب: ' + error.message
     });
   }
 };
 
-exports.deactivateDoctor = async (req, res) => {
-  try {
-    const { reason, notes } = req.body;
+// ==================== UPDATE DOCTOR ====================
 
-    const doctor = await Doctor.findById(req.params.id);
+exports.updateDoctor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const doctor = await Doctor.findById(id);
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -332,27 +326,66 @@ exports.deactivateDoctor = async (req, res) => {
       });
     }
 
-    // Update account status
-    const account = await Account.findOneAndUpdate(
-      { personId: doctor.personId },
-      { 
-        isActive: false,
-        deactivationReason: reason,
-        deactivationNotes: notes,
-        deactivatedAt: new Date(),
-        deactivatedBy: req.user._id
-      },
-      { new: true }
-    );
+    // Update doctor fields
+    if (updates.specialization) doctor.specialization = updates.specialization;
+    if (updates.subSpecialization !== undefined) doctor.subSpecialization = updates.subSpecialization;
+    if (updates.yearsOfExperience !== undefined) doctor.yearsOfExperience = updates.yearsOfExperience;
+    if (updates.hospitalAffiliation) doctor.hospitalAffiliation = updates.hospitalAffiliation;
+    if (updates.availableDays) doctor.availableDays = updates.availableDays;
+    if (updates.consultationFee !== undefined) doctor.consultationFee = updates.consultationFee;
 
-    if (!account) {
-      return res.status(404).json({
-        success: false,
-        message: 'حساب الطبيب غير موجود'
+    await doctor.save();
+
+    // Update person fields if provided
+    if (updates.phoneNumber || updates.address || updates.governorate || updates.city) {
+      await Person.findByIdAndUpdate(doctor.personId, {
+        ...(updates.phoneNumber && { phoneNumber: updates.phoneNumber }),
+        ...(updates.address && { address: updates.address }),
+        ...(updates.governorate && { governorate: updates.governorate }),
+        ...(updates.city && { city: updates.city })
       });
     }
 
-    res.status(200).json({
+    res.json({
+      success: true,
+      message: 'تم تحديث بيانات الطبيب بنجاح'
+    });
+  } catch (error) {
+    console.error('Update doctor error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'حدث خطأ في تحديث بيانات الطبيب'
+    });
+  }
+};
+
+// ==================== DEACTIVATE DOCTOR ====================
+
+exports.deactivateDoctor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason, notes } = req.body;
+
+    const doctor = await Doctor.findById(id);
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'الطبيب غير موجود'
+      });
+    }
+
+    await Account.findOneAndUpdate(
+      { personId: doctor.personId },
+      {
+        isActive: false,
+        deactivationReason: reason,
+        deactivationNotes: notes || '',
+        deactivatedAt: new Date(),
+        deactivatedBy: req.user._id
+      }
+    );
+
+    res.json({
       success: true,
       message: 'تم إلغاء تفعيل الطبيب بنجاح'
     });
@@ -360,14 +393,18 @@ exports.deactivateDoctor = async (req, res) => {
     console.error('Deactivate doctor error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في إلغاء تفعيل الطبيب'
+      message: 'حدث خطأ في إلغاء التفعيل'
     });
   }
 };
 
+// ==================== ACTIVATE DOCTOR ====================
+
 exports.activateDoctor = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.id);
+    const { id } = req.params;
+
+    const doctor = await Doctor.findById(id);
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -375,31 +412,18 @@ exports.activateDoctor = async (req, res) => {
       });
     }
 
-    // Update account status
-    const account = await Account.findOneAndUpdate(
+    await Account.findOneAndUpdate(
       { personId: doctor.personId },
-      { 
+      {
         isActive: true,
-        $unset: { 
-          deactivationReason: '',
-          deactivationNotes: '',
-          deactivatedAt: '',
-          deactivatedBy: ''
-        },
+        deactivationReason: null,
+        deactivationNotes: null,
         reactivatedAt: new Date(),
         reactivatedBy: req.user._id
-      },
-      { new: true }
+      }
     );
 
-    if (!account) {
-      return res.status(404).json({
-        success: false,
-        message: 'حساب الطبيب غير موجود'
-      });
-    }
-
-    res.status(200).json({
+    res.json({
       success: true,
       message: 'تم تفعيل الطبيب بنجاح'
     });
@@ -407,112 +431,96 @@ exports.activateDoctor = async (req, res) => {
     console.error('Activate doctor error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في تفعيل الطبيب'
+      message: 'حدث خطأ في التفعيل'
     });
   }
 };
 
-exports.updateDoctor = async (req, res) => {
-  try {
-    const updates = req.body;
-    
-    const doctor = await Doctor.findByIdAndUpdate(
-      req.params.id,
-      { $set: updates },
-      { new: true, runValidators: true }
-    );
-
-    if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: 'الطبيب غير موجود'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'تم تحديث بيانات الطبيب بنجاح',
-      doctor
-    });
-  } catch (error) {
-    console.error('Update doctor error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'خطأ في تحديث بيانات الطبيب'
-    });
-  }
-};
-
-// ==================== PATIENTS MANAGEMENT ====================
+// ==================== GET ALL PATIENTS ====================
 
 exports.getAllPatients = async (req, res) => {
   try {
-    // Get all patients with populated person data
-    const patients = await Patient.find()
-      .populate({
-        path: 'personId',
-        select: 'firstName lastName nationalId gender phoneNumber address dateOfBirth'
+    console.log('📥 getAllPatients called');
+    
+    // Get all patients
+    const patients = await Patient.find().lean();
+    console.log(`✅ Found ${patients.length} patients in database`);
+    
+    if (patients.length === 0) {
+      return res.json({
+        success: true,
+        count: 0,
+        patients: []
+      });
+    }
+
+    // Process each patient
+    const patientsWithDetails = await Promise.all(
+      patients.map(async (patient) => {
+        try {
+          // Get person data
+          const person = await Person.findById(patient.personId).lean();
+          
+          if (!person) {
+            console.warn(`⚠️ Person not found for patient ${patient._id}`);
+            return null;
+          }
+
+          // Get account data
+          const account = await Account.findOne({ personId: patient.personId }).lean();
+          
+          if (!account) {
+            console.warn(`⚠️ Account not found for patient ${patient._id}`);
+          }
+
+          return {
+            id: patient._id,
+            firstName: person.firstName || '',
+            lastName: person.lastName || '',
+            nationalId: person.nationalId || '',
+            childId: person.childId || null,
+            phoneNumber: person.phoneNumber || '',
+            email: account?.email || '',
+            isActive: account?.isActive ?? true,
+            bloodType: patient.bloodType || '',
+            lastLogin: account?.lastLogin || null,
+            createdAt: patient.createdAt || new Date()
+          };
+        } catch (error) {
+          console.error(`❌ Error processing patient ${patient._id}:`, error);
+          return null;
+        }
       })
-      .sort({ createdAt: -1 });
+    );
 
-    // Get accounts for all persons
-    const personIds = patients.map(p => p.personId._id);
-    const accounts = await Account.find({ personId: { $in: personIds } })
-      .select('personId email isActive lastLogin');
+    // Filter out null values
+    const validPatients = patientsWithDetails.filter(p => p !== null);
+    
+    console.log(`✅ Returning ${validPatients.length} valid patients`);
 
-    // Map accounts to persons
-    const accountMap = {};
-    accounts.forEach(acc => {
-      accountMap[acc.personId.toString()] = acc;
-    });
-
-    // Format response
-    const formattedPatients = patients.map(patient => {
-      const account = accountMap[patient.personId._id.toString()];
-      
-      return {
-        id: patient._id,
-        personId: patient.personId._id,
-        firstName: patient.personId.firstName,
-        lastName: patient.personId.lastName,
-        nationalId: patient.personId.nationalId,
-        gender: patient.personId.gender,
-        phoneNumber: patient.personId.phoneNumber,
-        address: patient.personId.address,
-        dateOfBirth: patient.personId.dateOfBirth,
-        email: account?.email || 'N/A',
-        isActive: account?.isActive !== false,
-        lastLogin: account?.lastLogin,
-        bloodType: patient.bloodType,
-        height: patient.height,
-        weight: patient.weight,
-        allergies: patient.allergies,
-        chronicDiseases: patient.chronicDiseases,
-        emergencyContact: patient.emergencyContact,
-        createdAt: patient.createdAt,
-        updatedAt: patient.updatedAt
-      };
-    });
-
-    res.status(200).json({
+    res.json({
       success: true,
-      count: formattedPatients.length,
-      patients: formattedPatients
+      count: validPatients.length,
+      patients: validPatients
     });
+
   } catch (error) {
-    console.error('Get all patients error:', error);
+    console.error('❌ Get patients error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في جلب بيانات المرضى'
+      message: 'حدث خطأ في جلب المرضى',
+      error: error.message
     });
   }
 };
 
+// ==================== GET PATIENT BY ID ====================
+
 exports.getPatientById = async (req, res) => {
   try {
-    const patient = await Patient.findById(req.params.id)
-      .populate('personId');
+    const { id } = req.params;
 
+    const patient = await Patient.findById(id).populate('personId');
     if (!patient) {
       return res.status(404).json({
         success: false,
@@ -521,35 +529,44 @@ exports.getPatientById = async (req, res) => {
     }
 
     const account = await Account.findOne({ personId: patient.personId._id });
+    const visitCount = await Visit.countDocuments({ patientId: patient._id });
 
-    // Get patient's visits statistics
-    const totalVisits = await Visit.countDocuments({ patientId: patient._id });
-
-    res.status(200).json({
+    res.json({
       success: true,
       patient: {
-        ...patient.toObject(),
-        person: patient.personId,
+        id: patient._id,
+        firstName: patient.personId.firstName,
+        lastName: patient.personId.lastName,
+        nationalId: patient.personId.nationalId,
+        childId: patient.personId.childId,
+        phoneNumber: patient.personId.phoneNumber,
+        gender: patient.personId.gender,
+        dateOfBirth: patient.personId.dateOfBirth,
+        address: patient.personId.address,
         email: account?.email,
-        isActive: account?.isActive !== false,
-        lastLogin: account?.lastLogin,
-        totalVisits
+        isActive: account?.isActive,
+        bloodType: patient.bloodType,
+        visitCount,
+        createdAt: patient.createdAt
       }
     });
   } catch (error) {
-    console.error('Get patient by ID error:', error);
+    console.error('Get patient error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في جلب بيانات المريض'
+      message: 'حدث خطأ في جلب بيانات المريض'
     });
   }
 };
 
+// ==================== DEACTIVATE PATIENT ====================
+
 exports.deactivatePatient = async (req, res) => {
   try {
+    const { id } = req.params;
     const { reason, notes } = req.body;
 
-    const patient = await Patient.findById(req.params.id);
+    const patient = await Patient.findById(id);
     if (!patient) {
       return res.status(404).json({
         success: false,
@@ -557,27 +574,18 @@ exports.deactivatePatient = async (req, res) => {
       });
     }
 
-    // Update account status
-    const account = await Account.findOneAndUpdate(
+    await Account.findOneAndUpdate(
       { personId: patient.personId },
-      { 
+      {
         isActive: false,
         deactivationReason: reason,
-        deactivationNotes: notes,
+        deactivationNotes: notes || '',
         deactivatedAt: new Date(),
         deactivatedBy: req.user._id
-      },
-      { new: true }
+      }
     );
 
-    if (!account) {
-      return res.status(404).json({
-        success: false,
-        message: 'حساب المريض غير موجود'
-      });
-    }
-
-    res.status(200).json({
+    res.json({
       success: true,
       message: 'تم إلغاء تفعيل المريض بنجاح'
     });
@@ -585,14 +593,18 @@ exports.deactivatePatient = async (req, res) => {
     console.error('Deactivate patient error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في إلغاء تفعيل المريض'
+      message: 'حدث خطأ في إلغاء التفعيل'
     });
   }
 };
 
+// ==================== ACTIVATE PATIENT ====================
+
 exports.activatePatient = async (req, res) => {
   try {
-    const patient = await Patient.findById(req.params.id);
+    const { id } = req.params;
+
+    const patient = await Patient.findById(id);
     if (!patient) {
       return res.status(404).json({
         success: false,
@@ -600,31 +612,18 @@ exports.activatePatient = async (req, res) => {
       });
     }
 
-    // Update account status
-    const account = await Account.findOneAndUpdate(
+    await Account.findOneAndUpdate(
       { personId: patient.personId },
-      { 
+      {
         isActive: true,
-        $unset: { 
-          deactivationReason: '',
-          deactivationNotes: '',
-          deactivatedAt: '',
-          deactivatedBy: ''
-        },
+        deactivationReason: null,
+        deactivationNotes: null,
         reactivatedAt: new Date(),
         reactivatedBy: req.user._id
-      },
-      { new: true }
+      }
     );
 
-    if (!account) {
-      return res.status(404).json({
-        success: false,
-        message: 'حساب المريض غير موجود'
-      });
-    }
-
-    res.status(200).json({
+    res.json({
       success: true,
       message: 'تم تفعيل المريض بنجاح'
     });
@@ -632,21 +631,19 @@ exports.activatePatient = async (req, res) => {
     console.error('Activate patient error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في تفعيل المريض'
+      message: 'حدث خطأ في التفعيل'
     });
   }
 };
 
+// ==================== UPDATE PATIENT ====================
+
 exports.updatePatient = async (req, res) => {
   try {
+    const { id } = req.params;
     const updates = req.body;
-    
-    const patient = await Patient.findByIdAndUpdate(
-      req.params.id,
-      { $set: updates },
-      { new: true, runValidators: true }
-    );
 
+    const patient = await Patient.findById(id);
     if (!patient) {
       return res.status(404).json({
         success: false,
@@ -654,16 +651,27 @@ exports.updatePatient = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    // Update patient fields
+    if (updates.bloodType) patient.bloodType = updates.bloodType;
+    await patient.save();
+
+    // Update person fields
+    if (updates.phoneNumber || updates.address) {
+      await Person.findByIdAndUpdate(patient.personId, {
+        ...(updates.phoneNumber && { phoneNumber: updates.phoneNumber }),
+        ...(updates.address && { address: updates.address })
+      });
+    }
+
+    res.json({
       success: true,
-      message: 'تم تحديث بيانات المريض بنجاح',
-      patient
+      message: 'تم تحديث بيانات المريض بنجاح'
     });
   } catch (error) {
     console.error('Update patient error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في تحديث بيانات المريض'
+      message: 'حدث خطأ في تحديث بيانات المريض'
     });
   }
 };
@@ -672,14 +680,10 @@ exports.updatePatient = async (req, res) => {
 
 exports.getAuditLogs = async (req, res) => {
   try {
-    const { limit = 100, page = 1, action, startDate, endDate } = req.query;
+    const { page = 1, limit = 50, action, startDate, endDate } = req.query;
 
     const query = {};
-    
-    if (action) {
-      query.action = action;
-    }
-    
+    if (action) query.action = action;
     if (startDate || endDate) {
       query.timestamp = {};
       if (startDate) query.timestamp.$gte = new Date(startDate);
@@ -692,34 +696,28 @@ exports.getAuditLogs = async (req, res) => {
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
 
-    const total = await AuditLog.countDocuments(query);
+    const count = await AuditLog.countDocuments(query);
 
-    res.status(200).json({
+    res.json({
       success: true,
-      count: logs.length,
-      total,
+      count,
       page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      pages: Math.ceil(count / parseInt(limit)),
       logs: logs.map(log => ({
         id: log._id,
         action: log.action,
         description: log.description,
         resourceType: log.resourceType,
-        resourceId: log.resourceId,
         userEmail: log.userId?.email,
-        userRoles: log.userId?.roles,
-        ipAddress: log.ipAddress,
-        userAgent: log.userAgent,
         timestamp: log.timestamp,
-        success: log.success,
-        errorMessage: log.errorMessage
+        success: log.success
       }))
     });
   } catch (error) {
     console.error('Get audit logs error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في جلب سجلات التدقيق'
+      message: 'حدث خطأ في جلب سجلات التدقيق'
     });
   }
 };
@@ -727,22 +725,27 @@ exports.getAuditLogs = async (req, res) => {
 exports.getUserAuditLogs = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { limit = 50 } = req.query;
+    const { page = 1, limit = 50 } = req.query;
 
     const logs = await AuditLog.find({ userId })
       .sort({ timestamp: -1 })
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
 
-    res.status(200).json({
+    const count = await AuditLog.countDocuments({ userId });
+
+    res.json({
       success: true,
-      count: logs.length,
+      count,
+      page: parseInt(page),
+      pages: Math.ceil(count / parseInt(limit)),
       logs
     });
   } catch (error) {
     console.error('Get user audit logs error:', error);
     res.status(500).json({
       success: false,
-      message: 'خطأ في جلب سجلات المستخدم'
+      message: 'حدث خطأ في جلب سجلات المستخدم'
     });
   }
 };

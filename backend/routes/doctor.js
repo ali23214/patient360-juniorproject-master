@@ -1,11 +1,9 @@
-// backend/routes/doctor.js
-// Doctor Routes - WITHOUT RATE LIMITING
-
 const express = require('express');
 const router = express.Router();
 
 // Import middleware
 const { protect, restrictTo } = require('../middleware/auth');
+const { profileLimiter } = require('../middleware/rateLimiter');
 
 // Import models
 const Patient = require('../models/Patient');
@@ -19,6 +17,7 @@ const visitController = require('../controllers/visitController');
  * ALL ROUTES REQUIRE:
  * 1. Authentication (protect)
  * 2. Doctor role only (restrictTo('doctor'))
+ * 3. Rate limiting
  */
 
 // ==========================================
@@ -34,6 +33,7 @@ router.get(
   '/search/:nationalId',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   async (req, res) => {
     try {
       const { nationalId } = req.params;
@@ -95,6 +95,7 @@ router.get(
   '/patients',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   async (req, res) => {
     try {
       // Get all patients
@@ -156,6 +157,7 @@ router.put(
   '/patient/:nationalId',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   async (req, res) => {
     try {
       const { nationalId } = req.params;
@@ -227,6 +229,7 @@ router.post(
   '/patient/:nationalId/visit',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   visitController.createVisit
 );
 
@@ -239,6 +242,7 @@ router.get(
   '/patient/:nationalId/visits',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   visitController.getPatientVisitsByNationalId
 );
 
@@ -251,6 +255,7 @@ router.get(
   '/visits',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   visitController.getDoctorVisits
 );
 
@@ -263,6 +268,7 @@ router.get(
   '/visit/:visitId',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   visitController.getVisitDetailsDoctor
 );
 
@@ -275,6 +281,7 @@ router.put(
   '/visit/:visitId',
   protect,
   restrictTo('doctor'),
+  profileLimiter,
   visitController.updateVisit
 );
 

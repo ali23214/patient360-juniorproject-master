@@ -4,7 +4,7 @@
    Patient 360° - وزارة الصحة
    ============================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap');
 
 /* ============================================
    CSS VARIABLES
@@ -14,7 +14,6 @@
   --secondary-cyan: #00a0a0;
   --accent-purple: #a23f97;
   --accent-purple-light: #c55db3;
-  --accent-purple-dark: #8a3582;
   --success-green: #10b981;
   --warning-orange: #f59e0b;
   --danger-red: #ef4444;
@@ -177,6 +176,7 @@
   line-height: 1.8;
   color: var(--gray-600);
   margin: 0;
+  white-space: pre-line;
 }
 
 .modal-footer {
@@ -492,7 +492,7 @@
   font-weight: 800;
   color: var(--gray-800);
   margin: 0 0 5px 0;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Cairo', sans-serif;
 }
 
 .stat-label {
@@ -507,26 +507,6 @@
   color: var(--gray-400);
   margin-top: 5px;
   display: block;
-}
-
-.stat-trend {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.stat-trend.up {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--success-green);
-}
-
-.stat-trend.down {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--danger-red);
 }
 
 /* Stats Row */
@@ -589,7 +569,6 @@
   font-size: 1.8rem;
   font-weight: 800;
   color: var(--gray-800);
-  font-family: 'Inter', sans-serif;
 }
 
 .status-label {
@@ -661,62 +640,6 @@
 .quick-action-btn.view-doctors:hover { border-color: var(--info-blue); }
 .quick-action-btn.view-patients:hover { border-color: var(--success-green); }
 .quick-action-btn.view-logs:hover { border-color: var(--warning-orange); }
-
-/* System Info */
-.system-info-section {
-  background: var(--gray-50);
-  border-radius: 20px;
-  padding: 25px;
-  border: 2px solid var(--gray-100);
-}
-
-.system-info-section .section-header h3 {
-  font-size: 1.1rem;
-  color: var(--gray-700);
-  margin: 0 0 20px 0;
-  font-weight: 700;
-}
-
-.system-info-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 15px;
-}
-
-.system-info-card {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 20px;
-  background: white;
-  border-radius: 14px;
-  border: 2px solid var(--gray-100);
-}
-
-.system-info-card .info-icon {
-  font-size: 1.8rem;
-}
-
-.system-info-card .info-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.system-info-card .info-label {
-  font-size: 0.85rem;
-  color: var(--gray-500);
-  font-weight: 500;
-}
-
-.system-info-card .info-value {
-  font-size: 1.1rem;
-  color: var(--gray-800);
-  font-weight: 700;
-}
-
-.status-online {
-  color: var(--success-green) !important;
-}
 
 /* ============================================
    CONTENT HEADER
@@ -973,6 +896,14 @@
   color: var(--danger-red);
 }
 
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--gray-400);
+  font-weight: 500;
+  display: block;
+  margin-top: 2px;
+}
+
 .form-group input,
 .form-group select,
 .form-group textarea {
@@ -996,6 +927,47 @@
 .form-group textarea {
   resize: vertical;
   min-height: 80px;
+}
+
+/* Days Grid */
+.days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.day-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 15px 10px;
+  background: white;
+  border: 2px solid var(--gray-200);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.day-card:hover {
+  border-color: var(--accent-purple);
+}
+
+.day-card.selected {
+  background: linear-gradient(135deg, var(--primary-teal) 0%, var(--accent-purple) 100%);
+  border-color: transparent;
+  color: white;
+}
+
+.day-name-ar {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.day-name-en {
+  font-size: 0.7rem;
+  opacity: 0.7;
 }
 
 .email-preview {
@@ -1496,12 +1468,6 @@ code {
   font-weight: 500;
 }
 
-.account-status-display {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .big-status-badge {
   display: inline-flex;
   align-items: center;
@@ -1521,14 +1487,6 @@ code {
 .big-status-badge.inactive {
   background: rgba(156, 163, 175, 0.2);
   color: var(--gray-500);
-}
-
-.deactivation-info {
-  padding: 15px;
-  background: rgba(239, 68, 68, 0.05);
-  border-radius: 10px;
-  color: var(--gray-600);
-  font-size: 0.95rem;
 }
 
 .medical-notice {
@@ -1844,8 +1802,7 @@ code {
     grid-template-columns: repeat(2, 1fr);
   }
   
-  .quick-actions-grid,
-  .system-info-grid {
+  .quick-actions-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -1864,6 +1821,10 @@ code {
   
   .form-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .days-grid {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -1904,13 +1865,16 @@ code {
     grid-template-columns: 1fr;
   }
   
-  .quick-actions-grid,
-  .system-info-grid {
+  .quick-actions-grid {
     grid-template-columns: 1fr;
   }
   
   .form-grid {
     grid-template-columns: 1fr;
+  }
+  
+  .days-grid {
+    grid-template-columns: repeat(3, 1fr);
   }
   
   .deactivate-reasons-grid {
@@ -1967,31 +1931,8 @@ code {
   .status-cards {
     flex-direction: column;
   }
-}
-
-/* ============================================
-   ACCESSIBILITY
-   ============================================ */
-.btn-primary:focus,
-.btn-secondary:focus,
-.btn-danger:focus,
-.btn-success:focus,
-.admin-tab:focus,
-.filter-btn:focus,
-.action-btn:focus,
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-  outline: 3px solid var(--accent-purple);
-  outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  
+  .days-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }

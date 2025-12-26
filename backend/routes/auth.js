@@ -1,56 +1,31 @@
-// backend/routes/auth.js
-// Authentication Routes - WITHOUT RATE LIMITING
-
 const express = require('express');
 const router = express.Router();
 
 // Import controllers
 const authController = require('../controllers/authController');
+const simpleSignupController = require('../controllers/simpleSignup');
 
 // Import middleware
+const security = require('../middleware/security');
 const auth = require('../middleware/auth');
 
-// ==========================================
-// PUBLIC ROUTES
-// ==========================================
+// Public routes
 
-/**
- * @route   POST /api/auth/register
- * @desc    Register new user (patient)
- * @access  Public
- */
-router.post('/register', authController.signup);
+// Simple Signup (الطريقة الجديدة البسيطة)
+router.post('/register', security.loginLimiter, authController.signup);
+router.post('/signup', security.loginLimiter, authController.signup);
 
-/**
- * @route   POST /api/auth/signup
- * @desc    Signup new user (alias for register)
- * @access  Public
- */
-router.post('/signup', authController.signup);
+// Original Signup
+router.post('/signup', security.loginLimiter, authController.signup);
 
-/**
- * @route   POST /api/auth/login
- * @desc    Login user
- * @access  Public
- */
-router.post('/login', authController.login);
+// Login route - REMOVED VALIDATION FOR NOW
+router.post('/login', 
+  security.loginLimiter,
+  authController.login
+);
 
-// ==========================================
-// PROTECTED ROUTES
-// ==========================================
-
-/**
- * @route   GET /api/auth/verify
- * @desc    Verify JWT token
- * @access  Private
- */
+// Protected routes
 router.get('/verify', auth.protect, authController.verifyToken);
-
-/**
- * @route   POST /api/auth/update-last-login
- * @desc    Update last login timestamp
- * @access  Private
- */
 router.post('/update-last-login', auth.protect, authController.updateLastLogin);
 
 module.exports = router;

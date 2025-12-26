@@ -1,43 +1,121 @@
-// backend/middleware/auditLog.js
-// Audit Logging Middleware for Patient360 System
+const mongoose = require('mongoose');
+
+/**
+ * Audit Log Schema
+ * Tracks all access to patient data for HIPAA compliance
+ */
+const auditLogSchema = new mongoose.Schema({
+  // Who accessed the data
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Account',
+    required: true
+  },
+  userEmail: {
+    type: String,
+    required: true
+  },
+  userRoles: [{
+    type: String,
+    enum: ['patient', 'doctor', 'admin', 'pharmacist', 'laboratory']
+  }],
+  
+  // What was accessed
+  action: {
+    type: String,
+    required: true,
+    enum: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'EXPORT']
+  },
+  resourceType: {
+    type: String,
+    required: true,
+    enum: ['PATIENT_PROFILE', 'VISIT', 'MEDICATION', 'LAB_RESULT', 'MEDICAL_HISTORY']
+  },
+  resourceId: {
+    type: mongoose.Schema.Types.ObjectId
+  },
+  
+  // Which patient's data was accessed
+  patientId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Patient'
+  },
+  
+  // Request details
+  method: {
+    type: String,
+    required: true,
+    enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+  },
+  endpoint: {
+    type: String,
+    required: true
+  },
+  ipAddress: String,
+  userAgent: String,
+  
+  // Response details
+  statusCode: Number,
+  success: Boolean,
+  
+  // Additional metadata
+  metadata: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  
+  // Timestamp
+  timestamp: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  collection: 'audit_logs'
+});
+
+// Index for efficient querying
+auditLogSchema.index({ userId: 1, timestamp: -1 });
+auditLogSchema.index({ patientId: 1, timestamp: -1 });
+auditLogSchema.index({ timestamp: -1 });
+auditLogSchema.index({ action: 1, resourceType: 1 });
+
+const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 
 /**
  * Audit Logging Middleware
- * Logs all admin and system actions
+ * Logs all access to patient data
  */
-exports.auditLog = (action) => {
+exports.auditLog = (resourceType) => {
   return async (req, res, next) => {
-    // Import model HERE to avoid circular dependency
-    const AuditLog = require('../models/AuditLog');
-    
     // Store original res.json to intercept response
     const originalJson = res.json.bind(res);
     
     // Override res.json to capture response
     res.json = function(body) {
-      // Create audit log entry asynchronously (don't block response)
+      // Create audit log entry
       const logEntry = {
-        userId: req.user?._id || req.user?.accountId,
-        action: action || determineAction(req.method),
-        description: `${action || req.method} - ${req.originalUrl}`,
-        resourceType: determineResourceType(req.originalUrl),
-        resourceId: req.params.id || req.params.visitId || req.params.medicationId || null,
+        userId: req.user?.accountId,
+        userEmail: req.user?.email || 'unknown',
+        userRoles: req.user?.roles || [],
+        action: determineAction(req.method),
+        resourceType: resourceType,
+        resourceId: req.params.visitId || req.params.medicationId || null,
+        patientId: req.user?.patientId,
+        method: req.method,
+        endpoint: req.originalUrl,
         ipAddress: req.ip || req.connection.remoteAddress,
         userAgent: req.get('user-agent'),
-        success: body.success !== false && res.statusCode < 400,
-        errorMessage: body.message && !body.success ? body.message : null,
+        statusCode: res.statusCode,
+        success: body.success || false,
         metadata: {
-          method: req.method,
           query: req.query,
-          params: req.params,
-          statusCode: res.statusCode
+          params: req.params
         },
         timestamp: new Date()
       };
 
-      // Save audit log (non-blocking)
+      // Save audit log asynchronously (don't block response)
       AuditLog.create(logEntry).catch(err => {
-        console.error('❌ Failed to create audit log:', err.message);
+        console.error('Failed to create audit log:', err);
       });
 
       // Send original response
@@ -52,69 +130,52 @@ exports.auditLog = (action) => {
  * Determine action type based on HTTP method
  */
 function determineAction(method) {
-  const actionMap = {
-    'GET': 'VIEW',
-    'POST': 'CREATE',
-    'PUT': 'UPDATE',
-    'PATCH': 'UPDATE',
-    'DELETE': 'DELETE'
-  };
-  return actionMap[method] || 'OTHER';
+  switch (method) {
+    case 'GET':
+      return 'VIEW';
+    case 'POST':
+      return 'CREATE';
+    case 'PUT':
+    case 'PATCH':
+      return 'UPDATE';
+    case 'DELETE':
+      return 'DELETE';
+    default:
+      return 'VIEW';
+  }
 }
 
 /**
- * Determine resource type from URL
- */
-function determineResourceType(url) {
-  if (url.includes('/patient')) return 'Patient';
-  if (url.includes('/doctor')) return 'Doctor';
-  if (url.includes('/visit')) return 'Visit';
-  if (url.includes('/medication')) return 'Visit';
-  if (url.includes('/admin')) return 'System';
-  if (url.includes('/audit')) return 'System';
-  return 'Other';
-}
-
-/**
- * Get audit logs (for admin)
- * This is a controller function, not middleware
+ * Get audit logs for a specific patient
+ * Admin/Doctor use only
  */
 exports.getAuditLogs = async (req, res) => {
   try {
-    // Import model here
-    const AuditLog = require('../models/AuditLog');
-    
-    const { 
-      patientId, 
-      userId,
-      startDate, 
-      endDate, 
-      action, 
-      resourceType,
-      page = 1, 
-      limit = 50 
-    } = req.query;
+    const { patientId, startDate, endDate, action, page = 1, limit = 50 } = req.query;
 
     // Build query
     const query = {};
     
-    if (patientId) query.patientId = patientId;
-    if (userId) query.userId = userId;
-    if (action) query.action = action;
-    if (resourceType) query.resourceType = resourceType;
+    if (patientId) {
+      query.patientId = patientId;
+    }
     
     if (startDate || endDate) {
       query.timestamp = {};
       if (startDate) query.timestamp.$gte = new Date(startDate);
       if (endDate) query.timestamp.$lte = new Date(endDate);
     }
+    
+    if (action) {
+      query.action = action;
+    }
 
     // Get logs with pagination
     const logs = await AuditLog.find(query)
-      .populate('userId', 'email roles')
       .sort({ timestamp: -1 })
-      .limit(parseInt(limit))
-      .skip((parseInt(page) - 1) * parseInt(limit))
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .select('-__v')
       .lean();
 
     const count = await AuditLog.countDocuments(query);
@@ -122,20 +183,9 @@ exports.getAuditLogs = async (req, res) => {
     res.status(200).json({
       success: true,
       count,
-      page: parseInt(page),
-      pages: Math.ceil(count / parseInt(limit)),
-      logs: logs.map(log => ({
-        id: log._id,
-        action: log.action,
-        description: log.description,
-        resourceType: log.resourceType,
-        resourceId: log.resourceId,
-        userEmail: log.userId?.email || 'Unknown',
-        userRoles: log.userId?.roles || [],
-        ipAddress: log.ipAddress,
-        timestamp: log.timestamp,
-        success: log.success
-      }))
+      page: Number(page),
+      pages: Math.ceil(count / limit),
+      logs
     });
   } catch (error) {
     console.error('Error fetching audit logs:', error);
@@ -151,16 +201,12 @@ exports.getAuditLogs = async (req, res) => {
  */
 exports.getAuditStats = async (req, res) => {
   try {
-    // Import model here
-    const AuditLog = require('../models/AuditLog');
-    const mongoose = require('mongoose');
-    
     const { patientId, startDate, endDate } = req.query;
 
     const matchStage = {};
     
     if (patientId) {
-      matchStage.patientId = new mongoose.Types.ObjectId(patientId);
+      matchStage.patientId = mongoose.Types.ObjectId(patientId);
     }
     
     if (startDate || endDate) {
@@ -205,3 +251,5 @@ exports.getAuditStats = async (req, res) => {
     });
   }
 };
+
+module.exports.AuditLog = AuditLog;

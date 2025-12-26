@@ -19,11 +19,10 @@ const personSchema = new mongoose.Schema({
   
   // Child ID - Auto-generated for minors (format: PARENT_ID-01, PARENT_ID-02, etc.)
   childId: {
-  type: String,
-  required: false,
-  unique: true,
-  sparse: true,
-  
+    type: String,
+    required: false,
+    unique: true,
+    sparse: true
   },
   
   // Is Minor flag (age < 18)
@@ -70,8 +69,31 @@ const personSchema = new mongoose.Schema({
   
   address: {
     type: String,
+    required: false,
     minlength: [5, 'العنوان يجب أن يكون 5 أحرف على الأقل'],
     maxlength: [200, 'العنوان يجب ألا يتجاوز 200 حرف']
+  },
+  
+  // NEW: Governorate field
+  governorate: {
+    type: String,
+    required: false,
+    enum: {
+      values: [
+        'damascus', 'rif_dimashq', 'aleppo', 'homs', 'hama', 
+        'latakia', 'tartus', 'idlib', 'deir_ez_zor', 'hasakah',
+        'raqqa', 'daraa', 'suwayda', 'quneitra'
+      ],
+      message: 'المحافظة غير صالحة'
+    }
+  },
+  
+  // NEW: City field
+  city: {
+    type: String,
+    required: false,
+    minlength: [2, 'اسم المدينة يجب أن يكون حرفين على الأقل'],
+    maxlength: [50, 'اسم المدينة يجب ألا يتجاوز 50 حرفاً']
   }
 }, {
   timestamps: true,

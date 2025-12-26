@@ -55,7 +55,17 @@ const auditLogSchema = new mongoose.Schema({
   // Resource affected
   resourceType: {
     type: String,
-    enum: ['Doctor', 'Patient', 'Visit', 'Account', 'System', 'Other'],
+    enum: [
+      // Resource types
+      'Doctor', 'Patient', 'Visit', 'Account', 'System', 'Other',
+      
+      // Admin action types (to prevent validation errors)
+      'VIEW_DOCTORS', 'VIEW_DOCTOR_DETAILS', 'ADD_DOCTOR', 'UPDATE_DOCTOR', 
+      'DEACTIVATE_DOCTOR', 'ACTIVATE_DOCTOR',
+      'VIEW_PATIENTS', 'VIEW_PATIENT_DETAILS', 'ADD_PATIENT', 'UPDATE_PATIENT',
+      'DEACTIVATE_PATIENT', 'ACTIVATE_PATIENT',
+      'VIEW_STATISTICS', 'VIEW_AUDIT_LOGS', 'VIEW_USER_AUDIT_LOGS'
+    ],
     default: 'Other'
   },
   

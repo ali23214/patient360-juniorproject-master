@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 
 async function generateHash() {
-  const newPassword = 'Admin@123'; // ← change here(put the pass)
+  const newPassword = 'hP6zs7hyTQbC'; // ← change here(put the pass)
   
   const hash = await bcrypt.hash(newPassword, 10);
   
