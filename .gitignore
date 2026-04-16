@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.local
+uploads/
+
+frontend/src/styles/_backup_*/
